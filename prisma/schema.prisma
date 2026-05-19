@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum ReservationStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+model RestaurantProfile {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  phone     String?
+  email     String?
+  website   String?
+  address   String?
+  notes     String?
+  locations Location[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Location {
+  id           String        @id @default(cuid())
+  profileId    String?
+  profile      RestaurantProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  name         String
+  street       String
+  city         String
+  region       String
+  postalCode   String
+  phone        String?
+  timezone     String        @default("America/New_York")
+  isActive     Boolean       @default(true)
+  hours        OpeningHour[]
+  reservations Reservation[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model OpeningHour {
+  id        String   @id @default(cuid())
+  locationId String
+  location  Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  dayOfWeek Int
+  openTime  String
+  closeTime String
+  isClosed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locationId, dayOfWeek])
+}
+
+model Reservation {
+  id           String            @id @default(cuid())
+  customerName String
+  phoneNumber  String
+  partySize    Int
+  date         DateTime
+  time         String
+  status       ReservationStatus @default(CONFIRMED)
+  notes        String?
+  locationId   String
+  location     Location          @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  source       String            @default("dashboard")
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([date, time])
+  @@index([locationId, date])
+  @@index([status])
+}
