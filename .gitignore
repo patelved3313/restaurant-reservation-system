@@ -11,3 +11,4 @@ pnpm-debug.log*
 *.log
 .DS_Store
 Thumbs.db
+autotrade-os/

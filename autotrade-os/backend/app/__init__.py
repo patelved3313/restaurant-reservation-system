@@ -1,2 +1,0 @@
-"""AutoTrade OS backend package."""
-

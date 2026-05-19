@@ -39,6 +39,24 @@ const baseControl =
 const blackControl = `${baseControl} bg-neutral-950 text-white hover:bg-neutral-800`;
 const secondaryControl = `${baseControl} border border-neutral-950 bg-white text-neutral-950 hover:bg-neutral-100`;
 const deleteControl = `${baseControl} bg-red-700 text-white hover:bg-red-800`;
+const reservationTimeError = "Reservation time must be between 09:00 and 22:00.";
+
+function timeToMinutes(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function getReservationTimeError(time: string) {
+  if (!time) {
+    return "";
+  }
+
+  const minutes = timeToMinutes(time);
+  const opens = timeToMinutes("09:00");
+  const closes = timeToMinutes("22:00");
+
+  return minutes < opens || minutes >= closes ? reservationTimeError : "";
+}
 
 export function ReservationsManager({
   reservations,
@@ -531,8 +549,44 @@ function ReservationForm({
   onCancel: () => void;
   onSubmit: (formData: FormData) => void;
 }) {
+  const [time, setTime] = useState(reservation?.time ?? "");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({
+    time: getReservationTimeError(reservation?.time ?? ""),
+  });
+  const timeError = fieldErrors.time;
+  const isTimeInvalid = Boolean(timeError);
+
+  function updateFieldError(name: string, error: string) {
+    setFieldErrors((current) => {
+      if (current[name] === error) {
+        return current;
+      }
+
+      return { ...current, [name]: error };
+    });
+  }
+
+  function handleTimeChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const nextTime = event.target.value;
+    setTime(nextTime);
+    updateFieldError("time", getReservationTimeError(nextTime));
+  }
+
+  function handleSubmit(formData: FormData) {
+    const nextTime = String(formData.get("time") ?? "");
+    const nextTimeError = getReservationTimeError(nextTime);
+
+    if (nextTimeError) {
+      setTime(nextTime);
+      updateFieldError("time", nextTimeError);
+      return;
+    }
+
+    onSubmit(formData);
+  }
+
   return (
-    <form action={onSubmit}>
+    <form action={handleSubmit}>
       <input type="hidden" name="id" value={reservation?.id ?? ""} />
       <div className="grid gap-5 md:grid-cols-2">
         <Field
@@ -574,11 +628,13 @@ function ReservationForm({
           defaultValue={reservation?.date ?? ""}
           required
         />
-        <Field
+        <ValidatedField
           name="time"
           label="Time"
           type="time"
-          defaultValue={reservation?.time ?? ""}
+          value={time}
+          onChange={handleTimeChange}
+          error={timeError}
           required
         />
       </div>
@@ -611,11 +667,42 @@ function ReservationForm({
         <button type="button" onClick={onCancel} className={secondaryControl}>
           Cancel
         </button>
-        <button disabled={isPending} className={blackControl}>
+        <button
+          disabled={isPending || isTimeInvalid}
+          className={`${blackControl} disabled:cursor-not-allowed disabled:opacity-40`}
+        >
           {isPending ? "Saving" : reservation ? "Save changes" : "Create reservation"}
         </button>
       </div>
     </form>
+  );
+}
+
+function ValidatedField({
+  label,
+  error,
+  className = "",
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & {
+  label: string;
+  error?: string;
+}) {
+  return (
+    <label className="block text-xs font-black uppercase tracking-[0.18em] text-neutral-500">
+      {label}
+      <input
+        {...props}
+        aria-invalid={Boolean(error)}
+        className={`mt-2 h-10 w-full rounded border bg-white px-3 text-sm font-bold text-neutral-950 outline-none transition focus:border-neutral-950 ${
+          error ? "border-red-700 focus:border-red-700" : "border-neutral-300"
+        } ${className}`}
+      />
+      {error ? (
+        <p className="mt-2 text-sm font-black normal-case tracking-normal text-red-700">
+          {error}
+        </p>
+      ) : null}
+    </label>
   );
 }
 
