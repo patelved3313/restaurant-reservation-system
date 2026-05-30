@@ -1,6 +1,5 @@
 import { ReservationsManager, type ReservationRowData } from "@/components/ReservationsManager";
-import { listDemoLocations, listDemoReservations } from "@/lib/demo-store";
-import { hasDatabaseUrl } from "@/lib/env";
+import { requireAuthContext, restaurantScopeWhere } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -10,21 +9,28 @@ export default async function DashboardPage({
 }: {
   searchParams?: Promise<{ error?: string; success?: string }>;
 }) {
-  const [reservations, locations] = hasDatabaseUrl()
-    ? await Promise.all([
-        prisma.reservation.findMany({
-          include: { location: true },
-          orderBy: [{ date: "desc" }, { time: "asc" }],
-        }),
-        prisma.location.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-      ])
-    : await Promise.all([listDemoReservations(), listDemoLocations()]);
+  const auth = await requireAuthContext();
+  const [reservations, locations] = await Promise.all([
+    prisma.reservation.findMany({
+      where:
+        auth.role === "ADMIN"
+          ? {}
+          : { location: { profileId: { in: auth.restaurantIds } } },
+      include: { location: true },
+      orderBy: [{ date: "desc" }, { time: "asc" }],
+    }),
+    prisma.location.findMany({
+      where: { ...restaurantScopeWhere(auth), isActive: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   const params = searchParams ? await searchParams : {};
   const activeLocations = locations.filter((location) => location.isActive);
   const serializedReservations: ReservationRowData[] = reservations.map((reservation) => ({
     id: reservation.id,
     customerName: reservation.customerName,
+    customerEmail: reservation.customerEmail,
     phoneNumber: reservation.phoneNumber,
     partySize: reservation.partySize,
     date: reservation.date.toISOString().slice(0, 10),
@@ -44,7 +50,6 @@ export default async function DashboardPage({
       }))}
       initialMessage={params.success}
       initialError={params.error}
-      isDemoMode={!hasDatabaseUrl()}
     />
   );
 }

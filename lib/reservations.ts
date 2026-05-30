@@ -1,19 +1,15 @@
 import { ReservationStatus } from "@prisma/client";
 import { z } from "zod";
-import {
-  createDemoReservation,
-  findDemoLocation,
-} from "@/lib/demo-store";
-import { hasDatabaseUrl } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 export const reservationInputSchema = z.object({
   customerName: z.string().trim().min(2),
+  customerEmail: z.string().trim().email().optional().nullable().or(z.literal("")),
   phoneNumber: z.string().trim().min(7),
   partySize: z.coerce.number().int().min(1).max(30),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
-  locationId: z.string().min(1),
+  locationId: z.string().uuid(),
   notes: z.string().trim().optional().nullable(),
   status: z.nativeEnum(ReservationStatus).optional(),
   source: z.string().trim().optional(),
@@ -36,13 +32,15 @@ export async function assertLocationAvailability(input: {
   locationId: string;
   date: string;
   time: string;
+  restaurantIds?: string[];
 }) {
-  const location = hasDatabaseUrl()
-    ? await prisma.location.findUnique({
-        where: { id: input.locationId },
-        include: { hours: true },
-      })
-    : await findDemoLocation(input.locationId);
+  const location = await prisma.location.findFirst({
+    where: {
+      id: input.locationId,
+      ...(input.restaurantIds ? { profileId: { in: input.restaurantIds } } : {}),
+    },
+    include: { hours: true },
+  });
 
   if (!location || !location.isActive) {
     return { ok: false as const, reason: "Location is not available." };
@@ -69,37 +67,43 @@ export async function assertLocationAvailability(input: {
   return { ok: true as const, location };
 }
 
-export async function createReservation(rawInput: unknown) {
+export async function createReservation(
+  rawInput: unknown,
+  options: { restaurantIds?: string[] } = {},
+) {
   const input = reservationInputSchema.parse(rawInput);
-  const availability = await assertLocationAvailability(input);
 
-  if (!availability.ok) {
-    return { ok: false as const, error: availability.reason };
+  try {
+    const availability = await assertLocationAvailability({
+      ...input,
+      restaurantIds: options.restaurantIds,
+    });
+
+    if (!availability.ok) {
+      return { ok: false as const, error: availability.reason };
+    }
+
+    const reservation = await prisma.reservation.create({
+      data: {
+        customerName: input.customerName,
+        customerEmail: input.customerEmail || null,
+        phoneNumber: input.phoneNumber,
+        partySize: input.partySize,
+        date: dateFromInput(input.date),
+        time: input.time,
+        locationId: input.locationId,
+        notes: input.notes || null,
+        status: input.status ?? ReservationStatus.CONFIRMED,
+        source: input.source ?? "dashboard",
+      },
+      include: { location: true },
+    });
+
+    return { ok: true as const, reservation };
+  } catch {
+    return {
+      ok: false as const,
+      error: "Unable to save the reservation. Please try again.",
+    };
   }
-
-  const data = {
-    customerName: input.customerName,
-    phoneNumber: input.phoneNumber,
-    partySize: input.partySize,
-    time: input.time,
-    locationId: input.locationId,
-    notes: input.notes || null,
-    status: input.status ?? ReservationStatus.CONFIRMED,
-    source: input.source ?? "dashboard",
-  };
-
-  const reservation = hasDatabaseUrl()
-    ? await prisma.reservation.create({
-        data: {
-          ...data,
-          date: dateFromInput(input.date),
-        },
-        include: { location: true },
-      })
-    : await createDemoReservation({
-        ...data,
-        date: input.date,
-      });
-
-  return { ok: true as const, reservation };
 }

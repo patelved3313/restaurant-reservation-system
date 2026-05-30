@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getAuthContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const hourSchema = z.object({
@@ -25,7 +26,19 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const auth = await getAuthContext();
+  if (!auth) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const { id } = await context.params;
+  const current = await prisma.location.findFirst({
+    where: auth.role === "ADMIN" ? { id } : { id, profileId: { in: auth.restaurantIds } },
+  });
+  if (!current) {
+    return NextResponse.json({ error: "Location not found." }, { status: 404 });
+  }
+
   const input = locationSchema.parse(await request.json());
 
   const location = await prisma.$transaction(async (tx) => {
@@ -64,7 +77,19 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const auth = await getAuthContext();
+  if (!auth) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const { id } = await context.params;
-  await prisma.location.update({ where: { id }, data: { isActive: false } });
+  const current = await prisma.location.findFirst({
+    where: auth.role === "ADMIN" ? { id } : { id, profileId: { in: auth.restaurantIds } },
+  });
+  if (!current) {
+    return NextResponse.json({ error: "Location not found." }, { status: 404 });
+  }
+
+  await prisma.location.update({ where: { id: current.id }, data: { isActive: false } });
   return NextResponse.json({ ok: true });
 }

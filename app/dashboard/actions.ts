@@ -4,14 +4,9 @@ import { ReservationStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  deleteDemoLocation,
-  deleteDemoReservation,
-  saveDemoLocation,
-  saveDemoProfile,
-  updateDemoLocationStatus,
-  updateDemoReservation,
-} from "@/lib/demo-store";
-import { hasDatabaseUrl } from "@/lib/env";
+  canAccessRestaurant,
+  requireAuthContext,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   assertLocationAvailability,
@@ -19,18 +14,42 @@ import {
   dateFromInput,
 } from "@/lib/reservations";
 
-export async function createReservationAction(formData: FormData) {
-  const result = await createReservation({
-    customerName: formData.get("customerName"),
-    phoneNumber: formData.get("phoneNumber"),
-    partySize: formData.get("partySize"),
-    date: formData.get("date"),
-    time: formData.get("time"),
-    locationId: formData.get("locationId"),
-    notes: formData.get("notes"),
-    status: formData.get("status"),
-    source: "dashboard",
+function scopedRestaurantIds(auth: Awaited<ReturnType<typeof requireAuthContext>>) {
+  return auth.role === "ADMIN" ? undefined : auth.restaurantIds;
+}
+
+async function getScopedReservation(id: string, auth: Awaited<ReturnType<typeof requireAuthContext>>) {
+  return prisma.reservation.findFirst({
+    where:
+      auth.role === "ADMIN"
+        ? { id }
+        : { id, location: { profileId: { in: auth.restaurantIds } } },
   });
+}
+
+async function getScopedLocation(id: string, auth: Awaited<ReturnType<typeof requireAuthContext>>) {
+  return prisma.location.findFirst({
+    where: auth.role === "ADMIN" ? { id } : { id, profileId: { in: auth.restaurantIds } },
+  });
+}
+
+export async function createReservationAction(formData: FormData) {
+  const auth = await requireAuthContext();
+  const result = await createReservation(
+    {
+      customerName: formData.get("customerName"),
+      customerEmail: formData.get("customerEmail"),
+      phoneNumber: formData.get("phoneNumber"),
+      partySize: formData.get("partySize"),
+      date: formData.get("date"),
+      time: formData.get("time"),
+      locationId: formData.get("locationId"),
+      notes: formData.get("notes"),
+      status: formData.get("status"),
+      source: "dashboard",
+    },
+    { restaurantIds: scopedRestaurantIds(auth) },
+  );
 
   if (!result.ok) {
     redirect(`/dashboard?error=${encodeURIComponent(result.error)}`);
@@ -41,17 +60,19 @@ export async function createReservationAction(formData: FormData) {
 }
 
 export async function updateReservationStatusAction(formData: FormData) {
+  const auth = await requireAuthContext();
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "") as ReservationStatus;
+  const reservation = await getScopedReservation(id, auth);
 
-  if (hasDatabaseUrl()) {
-    await prisma.reservation.update({
-      where: { id },
-      data: { status },
-    });
-  } else {
-    await updateDemoReservation(id, { status });
+  if (!reservation) {
+    redirect("/dashboard?error=Reservation not found.");
   }
+
+  await prisma.reservation.update({
+    where: { id: reservation.id },
+    data: { status },
+  });
 
   revalidatePath("/dashboard");
   redirect(
@@ -66,60 +87,67 @@ export async function updateReservationStatusAction(formData: FormData) {
 }
 
 export async function updateReservationAction(formData: FormData) {
+  const auth = await requireAuthContext();
   const id = String(formData.get("id") ?? "");
   const locationId = String(formData.get("locationId") ?? "");
   const date = String(formData.get("date") ?? "");
   const time = String(formData.get("time") ?? "");
   const status = String(formData.get("status") ?? "CONFIRMED") as ReservationStatus;
+  const reservation = await getScopedReservation(id, auth);
+
+  if (!reservation) {
+    redirect("/dashboard?error=Reservation not found.");
+  }
 
   if (status !== "CANCELLED") {
-    const availability = await assertLocationAvailability({ locationId, date, time });
+    const availability = await assertLocationAvailability({
+      locationId,
+      date,
+      time,
+      restaurantIds: scopedRestaurantIds(auth),
+    });
     if (!availability.ok) {
       redirect(`/dashboard?error=${encodeURIComponent(availability.reason)}`);
     }
   }
 
-  const data = {
-    customerName: String(formData.get("customerName") ?? ""),
-    phoneNumber: String(formData.get("phoneNumber") ?? ""),
-    partySize: Number(formData.get("partySize") ?? 1),
-    time,
-    locationId,
-    notes: String(formData.get("notes") ?? "") || null,
-    status,
-  };
-
-  if (hasDatabaseUrl()) {
-    await prisma.reservation.update({
-      where: { id },
-      data: { ...data, date: dateFromInput(date) },
-    });
-  } else {
-    await updateDemoReservation(id, { ...data, date });
-  }
+  await prisma.reservation.update({
+    where: { id: reservation.id },
+    data: {
+      customerName: String(formData.get("customerName") ?? ""),
+      customerEmail: String(formData.get("customerEmail") ?? "") || null,
+      phoneNumber: String(formData.get("phoneNumber") ?? ""),
+      partySize: Number(formData.get("partySize") ?? 1),
+      date: dateFromInput(date),
+      time,
+      locationId,
+      notes: String(formData.get("notes") ?? "") || null,
+      status,
+    },
+  });
 
   revalidatePath("/dashboard");
   redirect("/dashboard?success=Reservation updated.");
 }
 
 export async function deleteReservationAction(formData: FormData) {
+  const auth = await requireAuthContext();
   const id = String(formData.get("id") ?? "");
+  const reservation = await getScopedReservation(id, auth);
 
-  if (!id) {
-    redirect("/dashboard");
+  if (!reservation) {
+    redirect("/dashboard?error=Reservation not found.");
   }
 
-  if (hasDatabaseUrl()) {
-    await prisma.reservation.delete({ where: { id } });
-  } else {
-    await deleteDemoReservation(id);
-  }
+  await prisma.reservation.delete({ where: { id: reservation.id } });
 
   revalidatePath("/dashboard");
   redirect("/dashboard?success=Reservation deleted.");
 }
 
 export async function saveProfileAction(formData: FormData) {
+  const auth = await requireAuthContext();
+  const currentRestaurantId = String(formData.get("id") ?? "");
   const data = {
     name: String(formData.get("name") ?? ""),
     slug: String(formData.get("slug") ?? ""),
@@ -130,24 +158,42 @@ export async function saveProfileAction(formData: FormData) {
     notes: String(formData.get("notes") ?? "") || null,
   };
 
-  if (hasDatabaseUrl()) {
-    const existing = await prisma.restaurantProfile.findFirst();
+  if (auth.role === "ADMIN") {
+    const existing = currentRestaurantId
+      ? await prisma.restaurantProfile.findUnique({ where: { id: currentRestaurantId } })
+      : await prisma.restaurantProfile.findFirst();
+
     if (existing) {
       await prisma.restaurantProfile.update({ where: { id: existing.id }, data });
     } else {
       await prisma.restaurantProfile.create({ data });
     }
   } else {
-    await saveDemoProfile(data);
+    const restaurantId = auth.restaurantIds[0];
+    if (!restaurantId || !(await canAccessRestaurant(auth, restaurantId))) {
+      redirect("/dashboard/profile?error=You do not have access to that restaurant.");
+    }
+    await prisma.restaurantProfile.update({ where: { id: restaurantId }, data });
   }
 
   revalidatePath("/dashboard/profile");
-  redirect("/dashboard/profile");
+  redirect("/dashboard/profile?success=Profile saved.");
 }
 
 export async function saveLocationAction(formData: FormData) {
-  const profile = hasDatabaseUrl() ? await prisma.restaurantProfile.findFirst() : null;
+  const auth = await requireAuthContext();
   const id = String(formData.get("id") ?? "");
+  const current = id ? await getScopedLocation(id, auth) : null;
+  const restaurantId =
+    current?.profileId ??
+    (auth.role === "ADMIN"
+      ? (await prisma.restaurantProfile.findFirst({ orderBy: { createdAt: "asc" } }))?.id
+      : auth.restaurantIds[0]);
+
+  if (!restaurantId || !(await canAccessRestaurant(auth, restaurantId))) {
+    redirect("/dashboard/locations?error=You do not have access to that restaurant.");
+  }
+
   const hours = Array.from({ length: 7 }, (_, dayOfWeek) => ({
     dayOfWeek,
     openTime: String(formData.get(`openTime-${dayOfWeek}`) ?? "09:00"),
@@ -166,21 +212,17 @@ export async function saveLocationAction(formData: FormData) {
     isActive: formData.get("isActive") === "on",
   };
 
-  if (!hasDatabaseUrl()) {
-    await saveDemoLocation({
-      id: id || undefined,
-      ...data,
-      profileId: "profile_demo",
-      hours,
-    });
-  } else if (id) {
+  if (id) {
+    if (!current) {
+      redirect("/dashboard/locations?error=Location not found.");
+    }
     await prisma.$transaction(async (tx) => {
-      await tx.location.update({ where: { id }, data });
+      await tx.location.update({ where: { id: current.id }, data });
       for (const hour of hours) {
         await tx.openingHour.upsert({
-          where: { locationId_dayOfWeek: { locationId: id, dayOfWeek: hour.dayOfWeek } },
+          where: { locationId_dayOfWeek: { locationId: current.id, dayOfWeek: hour.dayOfWeek } },
           update: hour,
-          create: { ...hour, locationId: id },
+          create: { ...hour, locationId: current.id },
         });
       }
     });
@@ -188,7 +230,7 @@ export async function saveLocationAction(formData: FormData) {
     await prisma.location.create({
       data: {
         ...data,
-        profileId: profile?.id,
+        profileId: restaurantId,
         hours: { create: hours },
       },
     });
@@ -199,21 +241,19 @@ export async function saveLocationAction(formData: FormData) {
 }
 
 export async function deleteLocationAction(formData: FormData) {
+  const auth = await requireAuthContext();
   const id = String(formData.get("id") ?? "");
+  const location = await getScopedLocation(id, auth);
 
-  if (!id) {
-    redirect("/dashboard/locations");
+  if (!location) {
+    redirect("/dashboard/locations?error=Location not found.");
   }
 
-  if (hasDatabaseUrl()) {
-    await prisma.$transaction(async (tx) => {
-      await tx.reservation.deleteMany({ where: { locationId: id } });
-      await tx.openingHour.deleteMany({ where: { locationId: id } });
-      await tx.location.delete({ where: { id } });
-    });
-  } else {
-    await deleteDemoLocation(id);
-  }
+  await prisma.$transaction(async (tx) => {
+    await tx.reservation.deleteMany({ where: { locationId: location.id } });
+    await tx.openingHour.deleteMany({ where: { locationId: location.id } });
+    await tx.location.delete({ where: { id: location.id } });
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/locations");
@@ -221,21 +261,19 @@ export async function deleteLocationAction(formData: FormData) {
 }
 
 export async function updateLocationStatusAction(formData: FormData) {
+  const auth = await requireAuthContext();
   const id = String(formData.get("id") ?? "");
   const isActive = String(formData.get("isActive") ?? "") === "true";
+  const location = await getScopedLocation(id, auth);
 
-  if (!id) {
-    redirect("/dashboard/locations");
+  if (!location) {
+    redirect("/dashboard/locations?error=Location not found.");
   }
 
-  if (hasDatabaseUrl()) {
-    await prisma.location.update({
-      where: { id },
-      data: { isActive },
-    });
-  } else {
-    await updateDemoLocationStatus(id, isActive);
-  }
+  await prisma.location.update({
+    where: { id: location.id },
+    data: { isActive },
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/locations");

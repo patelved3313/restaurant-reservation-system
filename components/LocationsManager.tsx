@@ -45,15 +45,17 @@ const disabledStatusControl = `${baseControl} pointer-events-none border border-
 export function LocationsManager({
   locations,
   initialMessage,
+  initialError,
 }: {
   locations: LocationCardData[];
   initialMessage?: string;
+  initialError?: string;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [toast, setToast] = useState(initialMessage ?? "");
+  const [toast, setToast] = useState(initialMessage ?? initialError ?? "");
   const [confirmIntent, setConfirmIntent] = useState<ConfirmIntent | null>(null);
 
   const editingLocation = useMemo(

@@ -1,9 +1,16 @@
 import { DashboardShell } from "@/components/DashboardShell";
+import { requireAuthContext } from "@/lib/auth";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <DashboardShell>{children}</DashboardShell>;
+  const auth = await requireAuthContext();
+
+  return (
+    <DashboardShell userEmail={auth.user.email} userRole={auth.role}>
+      {children}
+    </DashboardShell>
+  );
 }

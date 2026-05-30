@@ -7,7 +7,15 @@ const nav = [
   { href: "/dashboard/profile", label: "Profile", icon: Settings },
 ];
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({
+  children,
+  userEmail,
+  userRole,
+}: {
+  children: React.ReactNode;
+  userEmail: string;
+  userRole: "ADMIN" | "OWNER";
+}) {
   return (
     <div className="min-h-screen bg-white text-neutral-950">
       <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-neutral-200 bg-white px-5 py-6 lg:block">
@@ -36,6 +44,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
+        <div className="absolute bottom-24 left-5 right-5 rounded border border-neutral-200 bg-neutral-50 px-3 py-3">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-neutral-500">
+            {userRole === "ADMIN" ? "Admin" : "Owner"}
+          </p>
+          <p className="mt-1 truncate text-sm font-black text-neutral-950">{userEmail}</p>
+        </div>
+
         <form action="/api/auth/logout" method="post" className="absolute bottom-6 left-5 right-5">
           <button className="flex w-full items-center justify-center gap-2 rounded border border-neutral-200 px-4 py-3 text-sm font-black text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950">
             <LogOut size={16} />
@@ -47,9 +62,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <main className="lg:pl-72">
         <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8 lg:px-10">
           <header className="mb-8 flex items-center justify-between border-b border-neutral-200 pb-5 lg:hidden">
-            <Link href="/dashboard" className="text-xl font-black tracking-tight">
-              ReserveOS
-            </Link>
+            <div>
+              <Link href="/dashboard" className="text-xl font-black tracking-tight">
+                ReserveOS
+              </Link>
+              <p className="mt-1 max-w-[220px] truncate text-xs font-bold text-neutral-500">
+                {userRole === "ADMIN" ? "Admin" : "Owner"} | {userEmail}
+              </p>
+            </div>
             <form action="/api/auth/logout" method="post">
               <button className="rounded bg-neutral-950 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white">
                 Sign out

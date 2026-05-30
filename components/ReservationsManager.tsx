@@ -18,6 +18,7 @@ type LocationOption = {
 export type ReservationRowData = {
   id: string;
   customerName: string;
+  customerEmail: string | null;
   phoneNumber: string;
   partySize: number;
   date: string;
@@ -63,13 +64,11 @@ export function ReservationsManager({
   locations,
   initialMessage,
   initialError,
-  isDemoMode,
 }: {
   reservations: ReservationRowData[];
   locations: LocationOption[];
   initialMessage?: string;
   initialError?: string;
-  isDemoMode: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -113,6 +112,7 @@ export function ReservationsManager({
         (filter === "cancelled" && reservation.status === "CANCELLED");
       const searchable = [
         reservation.customerName,
+        reservation.customerEmail ?? "",
         reservation.phoneNumber,
         reservation.locationName,
         reservation.notes ?? "",
@@ -171,8 +171,6 @@ export function ReservationsManager({
           + New Reservation
         </button>
       </div>
-
-      {isDemoMode ? <DemoModeNotice /> : null}
 
       <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Today" value={todayCount} detail="Reservations on the floor" />
@@ -248,6 +246,11 @@ export function ReservationsManager({
                     <p className="mt-1 whitespace-nowrap text-sm font-bold text-neutral-500">
                       {reservation.phoneNumber}
                     </p>
+                    {reservation.customerEmail ? (
+                      <p className="mt-1 whitespace-nowrap text-sm font-bold text-neutral-500">
+                        {reservation.customerEmail}
+                      </p>
+                    ) : null}
                     {reservation.notes ? (
                       <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
                         {reservation.notes}
@@ -380,18 +383,6 @@ function MetricCard({
       </p>
       <p className="mt-5 text-5xl font-black tracking-tight text-neutral-950">{value}</p>
       <p className="mt-3 text-sm font-bold text-neutral-500">{detail}</p>
-    </div>
-  );
-}
-
-function DemoModeNotice() {
-  return (
-    <div className="mt-6 rounded-lg border border-neutral-200 bg-white px-5 py-4 shadow-panel">
-      <p className="text-sm font-black text-neutral-950">Demo mode active</p>
-      <p className="mt-1 text-sm font-bold text-neutral-500">
-        Supabase is not configured yet, so reservations are saved locally in
-        `data/reserveos-demo.json`.
-      </p>
     </div>
   );
 }
@@ -594,6 +585,12 @@ function ReservationForm({
           label="Customer name"
           defaultValue={reservation?.customerName ?? ""}
           required
+        />
+        <Field
+          name="customerEmail"
+          label="Customer email"
+          type="email"
+          defaultValue={reservation?.customerEmail ?? ""}
         />
         <Field
           name="phoneNumber"

@@ -12,70 +12,115 @@ enum ReservationStatus {
   CONFIRMED
   CANCELLED
   COMPLETED
+
+  @@map("reservation_status")
+}
+
+enum UserRole {
+  ADMIN
+  OWNER
+
+  @@map("user_role")
 }
 
 model RestaurantProfile {
-  id        String     @id @default(cuid())
+  id        String            @id @default(uuid()) @db.Uuid
   name      String
-  slug      String     @unique
+  slug      String            @unique
   phone     String?
   email     String?
   website   String?
   address   String?
   notes     String?
   locations Location[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  owners    RestaurantOwner[]
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("restaurants")
+}
+
+model RestaurantOwner {
+  id         String            @id @default(uuid()) @db.Uuid
+  authUserId String            @map("auth_user_id") @db.Uuid
+  email      String
+  role       UserRole          @default(OWNER)
+  profileId  String            @map("restaurant_id") @db.Uuid
+  profile    RestaurantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([authUserId, profileId])
+  @@index([authUserId])
+  @@index([profileId])
+  @@map("restaurant_owners")
+}
+
+model AdminUser {
+  id         String   @id @default(uuid()) @db.Uuid
+  authUserId String   @unique @map("auth_user_id") @db.Uuid
+  email      String   @unique
+  role       UserRole @default(ADMIN)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([authUserId])
+  @@map("admin_users")
 }
 
 model Location {
-  id           String        @id @default(cuid())
-  profileId    String?
-  profile      RestaurantProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  id           String            @id @default(uuid()) @db.Uuid
+  profileId    String            @map("restaurant_id") @db.Uuid
+  profile      RestaurantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   name         String
   street       String
   city         String
   region       String
-  postalCode   String
+  postalCode   String            @map("postal_code")
   phone        String?
-  timezone     String        @default("America/New_York")
-  isActive     Boolean       @default(true)
+  timezone     String            @default("America/New_York")
+  isActive     Boolean           @default(true) @map("is_active")
   hours        OpeningHour[]
   reservations Reservation[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([profileId])
+  @@index([isActive])
+  @@map("locations")
 }
 
 model OpeningHour {
-  id        String   @id @default(cuid())
-  locationId String
-  location  Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  dayOfWeek Int
-  openTime  String
-  closeTime String
-  isClosed  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid()) @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int      @map("day_of_week")
+  openTime   String   @map("open_time")
+  closeTime  String   @map("close_time")
+  isClosed   Boolean  @default(false) @map("is_closed")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([locationId, dayOfWeek])
+  @@map("opening_hours")
 }
 
 model Reservation {
-  id           String            @id @default(cuid())
-  customerName String
-  phoneNumber  String
-  partySize    Int
-  date         DateTime
-  time         String
-  status       ReservationStatus @default(CONFIRMED)
-  notes        String?
-  locationId   String
-  location     Location          @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  source       String            @default("dashboard")
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id            String            @id @default(uuid()) @db.Uuid
+  customerName  String            @map("customer_name")
+  customerEmail String?           @map("customer_email")
+  phoneNumber   String            @map("customer_phone")
+  partySize     Int               @map("party_size")
+  date          DateTime          @map("reservation_date") @db.Date
+  time          String            @map("reservation_time")
+  status        ReservationStatus @default(CONFIRMED)
+  notes         String?           @map("special_requests")
+  locationId    String            @map("location_id") @db.Uuid
+  location      Location          @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  source        String            @default("dashboard")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([date, time])
   @@index([locationId, date])
   @@index([status])
+  @@map("reservations")
 }

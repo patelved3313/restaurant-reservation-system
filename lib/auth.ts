@@ -1,31 +1,74 @@
-import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const SESSION_COOKIE = "reserve_admin_session";
+export type AuthContext = {
+  user: {
+    id: string;
+    email: string;
+  };
+  role: "ADMIN" | "OWNER";
+  restaurantIds: string[];
+};
 
-const encoder = new TextEncoder();
+export async function getAuthContext(): Promise<AuthContext | null> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-async function sha256(value: string) {
-  const hash = await crypto.subtle.digest("SHA-256", encoder.encode(value));
-  return Array.from(new Uint8Array(hash))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  if (error || !user?.email) {
+    return null;
+  }
+
+  const [adminUser, ownerRows] = await Promise.all([
+    prisma.adminUser.findUnique({ where: { authUserId: user.id } }),
+    prisma.restaurantOwner.findMany({
+      where: { authUserId: user.id },
+      select: { profileId: true },
+    }),
+  ]);
+
+  if (adminUser?.role === "ADMIN") {
+    return {
+      user: { id: user.id, email: user.email },
+      role: "ADMIN",
+      restaurantIds: [],
+    };
+  }
+
+  if (ownerRows.length > 0) {
+    return {
+      user: { id: user.id, email: user.email },
+      role: "OWNER",
+      restaurantIds: ownerRows.map((owner) => owner.profileId),
+    };
+  }
+
+  return null;
 }
 
-export function getAdminEmail() {
-  return process.env.ADMIN_EMAIL ?? "admin@restaurant.com";
+export async function requireAuthContext() {
+  const context = await getAuthContext();
+
+  if (!context) {
+    redirect("/login?error=unauthorized");
+  }
+
+  return context;
 }
 
-export function getAdminPassword() {
-  return process.env.ADMIN_PASSWORD ?? "password";
+export function restaurantScopeWhere(context: AuthContext) {
+  return context.role === "ADMIN" ? {} : { profileId: { in: context.restaurantIds } };
 }
 
-export async function createSessionToken() {
-  const secret = process.env.SESSION_SECRET ?? "development-secret";
-  return sha256(`${getAdminEmail()}:${getAdminPassword()}:${secret}`);
+export function locationScopeWhere(context: AuthContext) {
+  return context.role === "ADMIN"
+    ? {}
+    : { location: { profileId: { in: context.restaurantIds } } };
 }
 
-export async function isAuthenticated() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  return Boolean(token && token === (await createSessionToken()));
+export async function canAccessRestaurant(context: AuthContext, restaurantId: string) {
+  return context.role === "ADMIN" || context.restaurantIds.includes(restaurantId);
 }

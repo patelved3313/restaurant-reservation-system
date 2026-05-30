@@ -1,6 +1,5 @@
 import { LocationsManager, type LocationCardData } from "@/components/LocationsManager";
-import { listDemoLocations } from "@/lib/demo-store";
-import { hasDatabaseUrl } from "@/lib/env";
+import { requireAuthContext, restaurantScopeWhere } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +9,12 @@ export default async function LocationsPage({
 }: {
   searchParams?: Promise<{ success?: string; error?: string }>;
 }) {
-  const locations = hasDatabaseUrl()
-    ? await prisma.location.findMany({
-        include: { hours: { orderBy: { dayOfWeek: "asc" } } },
-        orderBy: { createdAt: "asc" },
-      })
-    : await listDemoLocations();
+  const auth = await requireAuthContext();
+  const locations = await prisma.location.findMany({
+    where: restaurantScopeWhere(auth),
+    include: { hours: { orderBy: { dayOfWeek: "asc" } } },
+    orderBy: { createdAt: "asc" },
+  });
 
   const serializedLocations: LocationCardData[] = locations.map((location) => ({
     id: location.id,
@@ -51,7 +50,8 @@ export default async function LocationsPage({
 
       <LocationsManager
         locations={serializedLocations}
-        initialMessage={params?.success ?? params?.error}
+        initialMessage={params?.success}
+        initialError={params?.error}
       />
     </div>
   );

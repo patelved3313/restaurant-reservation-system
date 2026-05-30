@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getAuthContext, restaurantScopeWhere } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const hourSchema = z.object({
@@ -22,7 +23,13 @@ const locationSchema = z.object({
 });
 
 export async function GET() {
+  const auth = await getAuthContext();
+  if (!auth) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const locations = await prisma.location.findMany({
+    where: restaurantScopeWhere(auth),
     include: { hours: { orderBy: { dayOfWeek: "asc" } } },
     orderBy: { createdAt: "asc" },
   });
@@ -31,8 +38,24 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await getAuthContext();
+  if (!auth) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const input = locationSchema.parse(await request.json());
-  const profile = await prisma.restaurantProfile.findFirst();
+  const profile =
+    auth.role === "ADMIN"
+      ? await prisma.restaurantProfile.findFirst({ orderBy: { createdAt: "asc" } })
+      : await prisma.restaurantProfile.findFirst({
+          where: { id: { in: auth.restaurantIds } },
+          orderBy: { createdAt: "asc" },
+        });
+
+  if (!profile) {
+    return NextResponse.json({ error: "Restaurant profile not found." }, { status: 403 });
+  }
+
   const location = await prisma.location.create({
     data: {
       name: input.name,
@@ -43,7 +66,7 @@ export async function POST(request: Request) {
       phone: input.phone || null,
       timezone: input.timezone,
       isActive: input.isActive,
-      profileId: profile?.id,
+      profileId: profile.id,
       hours: { create: input.hours },
     },
     include: { hours: { orderBy: { dayOfWeek: "asc" } } },

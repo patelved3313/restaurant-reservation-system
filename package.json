@@ -3,16 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "prisma generate && next build",
-    "start": "next start",
+    "dev": "dotenv -e .env -- sh -c 'node scripts/validate-env.mjs && next dev'",
+    "build": "dotenv -e .env -- sh -c 'node scripts/validate-env.mjs && prisma generate && next build'",
+    "start": "dotenv -e .env -- sh -c 'node scripts/validate-env.mjs && next start'",
     "lint": "eslint .",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "node scripts/seed.mjs",
+    "db:studio": "prisma studio",
+    "vercel-build": "npm run build"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
     "next": "^15.5.0",
@@ -27,6 +31,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "autoprefixer": "^10.4.20",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.17.0",
     "eslint-config-next": "^15.5.0",
     "postcss": "^8.4.49",

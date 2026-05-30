@@ -1,14 +1,23 @@
 import { saveProfileAction } from "@/app/dashboard/actions";
-import { getDemoProfile } from "@/lib/demo-store";
-import { hasDatabaseUrl } from "@/lib/env";
+import { requireAuthContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProfilePage() {
-  const profile = hasDatabaseUrl()
-    ? await prisma.restaurantProfile.findFirst()
-    : await getDemoProfile();
+export default async function ProfilePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ success?: string; error?: string }>;
+}) {
+  const auth = await requireAuthContext();
+  const profile =
+    auth.role === "ADMIN"
+      ? await prisma.restaurantProfile.findFirst({ orderBy: { createdAt: "asc" } })
+      : await prisma.restaurantProfile.findFirst({
+          where: { id: { in: auth.restaurantIds } },
+          orderBy: { createdAt: "asc" },
+        });
+  const params = searchParams ? await searchParams : {};
 
   return (
     <div className="max-w-4xl">
@@ -23,6 +32,12 @@ export default async function ProfilePage() {
         action={saveProfileAction}
         className="mt-8 rounded-lg border border-neutral-200 bg-white p-6 shadow-panel"
       >
+        <input type="hidden" name="id" value={profile?.id ?? ""} />
+        {params.success || params.error ? (
+          <p className="mb-5 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-bold text-neutral-700">
+            {params.success ?? params.error}
+          </p>
+        ) : null}
         <div className="grid gap-5 md:grid-cols-2">
           <Field name="name" label="Restaurant name" defaultValue={profile?.name ?? ""} required />
           <Field name="slug" label="Slug" defaultValue={profile?.slug ?? "restaurant"} required />

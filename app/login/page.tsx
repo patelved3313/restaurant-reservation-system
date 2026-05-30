@@ -66,9 +66,18 @@ async function LoginError({
     return null;
   }
 
+  const message =
+    params.error === "config"
+      ? "Supabase is not configured for this deployment."
+      : params.error === "unauthorized"
+        ? "Your account is not assigned to a restaurant dashboard."
+        : params.error === "missing"
+          ? "Enter your email and password."
+          : "Invalid email or password.";
+
   return (
     <p className="mt-4 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-bold text-neutral-700">
-      Invalid admin credentials.
+      {message}
     </p>
   );
 }
